@@ -16,16 +16,15 @@ def conectar_db():
     db_path = "sair_data.db"
     ID_DRIVE = "1txQ_c8GZnaBhcU5lgbs6TcY5rXq0FHqZ"
     
-    # Si no existe o pesa menos de 1MB (error de descarga previa), forzar descarga
     if not os.path.exists(db_path) or os.path.getsize(db_path) < 1000000:
-        with st.spinner("Descargando Base de Datos Forense (310MB) desde servidor seguro... Esto puede tardar unos minutos."):
+        with st.spinner("Descargando Base de Datos (310MB)... Espere un momento."):
             try:
-                # El parámetro fuzzy=True ayuda a saltar los bloqueos de Google Drive
                 gdown.download(id=ID_DRIVE, output=db_path, quiet=False, fuzzy=True)
             except Exception as e:
                 st.error(f"Error técnico de descarga: {e}")
             
     return sqlite3.connect(db_path, check_same_thread=False)
+
 # --- 1. CONFIGURACIÓN NORMATIVA Y TRADUCCIÓN ---
 traductor_en = GoogleTranslator(source='es', target='en')
 traductor_es = GoogleTranslator(source='en', target='es')
@@ -156,9 +155,8 @@ def buscar_en_db(term, fuente):
 # --- 2. INTERFAZ GRÁFICA Y GESTIÓN DE ESTADO ---
 st.set_page_config(page_title="SAIR v17.5 GOLD - INVIMA", layout="wide")
 st.title("SAIR v17.5 GOLD DEFINITIVA")
-st.markdown("### Auditoría Forense Integral (INVIMA 2026)")
+st.markdown("### Auditoría Integral Al Rotulado Nutricional (INVIMA 2026)")
 
-# --- MONITOR DE BASE DE DATOS EN BARRA LATERAL ---
 with st.sidebar:
     st.markdown("### Estado del Sistema")
     if os.path.exists("sair_data.db"):
@@ -239,7 +237,7 @@ with col_p2:
 st.divider()
 
 # --- 3. REPORTE TÉCNICO INVIMA (MOTOR ALGORÍTMICO COMPLETO) ---
-st.header("3. REPORTE TÉCNICO INVIMA")
+st.header("3. REPORTE TÉCNICO")
 
 col_r1, col_r2 = st.columns([2, 1])
 with col_r1:
@@ -264,7 +262,7 @@ if st.button("GENERAR ANÁLISIS INTEGRAL", type="primary"):
         mapa_forense = {'energia': ['energia', 'energy', 'energy_kcal'], 'proteina': ['proteina', 'protein'], 'grasa_total': ['grasa_total', 'fat', 'total_lipid'], 'grasa_sat': ['grasa_sat', 'fatty_acids_total_saturated'], 'grasa_trans': ['grasa_trans', 'fatty_acids_total_trans'], 'carbohidratos': ['carbohidratos', 'carbohydrate'], 'azucares_totales': ['azucares_totales', 'sugars', 'sugars_total'], 'azucares_anadidos': ['azucares_anadidos', 'added_sugars', 'sugars_added'], 'fibra': ['fibra', 'fiber'], 'sodio': ['sodio', 'sodium'], 'vit_a': ['vit_a', 'vitamin_a'], 'vit_d': ['vit_d', 'vitamin_d'], 'hierro': ['hierro', 'iron'], 'calcio': ['calcio', 'calcium'], 'zinc': ['zinc']}
         nombres_display = {'energia': 'Energía (kcal)', 'proteina': 'Proteína (g)', 'grasa_total': 'Grasa Total (g)', 'grasa_sat': 'Grasa Saturada (g)', 'grasa_trans': 'Grasa Trans (g)', 'carbohidratos': 'Carbohidratos Tot. (g)', 'azucares_totales': 'Azúcares Totales (g)', 'azucares_anadidos': 'Azúcares Añadidos (g)', 'fibra': 'Fibra Dietaria (g)', 'sodio': 'Sodio (mg)', 'vit_a': 'Vitamina A (ug)', 'vit_d': 'Vitamina D (ug)', 'hierro': 'Hierro (mg)', 'calcio': 'Calcio (mg)', 'zinc': 'Zinc (mg)'}
         
-        texto_reporte = f"AUDITORÍA INVIMA - {var_prod}\n" + "="*85 + "\n"
+        texto_reporte = f"AUDITORÍA INTEGRAL AL ROTULADO NUTRICIONAL - {var_prod}\n" + "="*85 + "\n"
         texto_reporte += "1. COMPOSICIÓN DE LA FORMULACIÓN (Trazabilidad):\n"
         texto_reporte += f"{'INGREDIENTE':<35} | {'ORIGEN':<8} | {'CANT.':<8} | {'%'}\n" + "-"*75 + "\n"
         
@@ -369,7 +367,6 @@ if st.button("GENERAR ANÁLISIS INTEGRAL", type="primary"):
 if st.session_state.reporte_texto:
     st.markdown(f"```text\n{st.session_state.reporte_texto}\n```")
     
-    # Generación del PDF para descarga
     pdf = FPDF()
     pdf.add_page()
     pdf.set_font("Courier", size=8)
@@ -377,12 +374,11 @@ if st.session_state.reporte_texto:
         pdf.cell(200, 3.5, txt=l.encode('latin-1', 'replace').decode('latin-1'), ln=True)
     pdf_bytes = pdf.output(dest='S').encode('latin-1')
     
-    nombre_archivo = f"Acta_{var_prod if var_prod else 'Producto'}_{datetime.now().strftime('%Y-%m-%d_%H%M%S')}.pdf"
+    nombre_archivo = f"Acta_Auditoria_{var_prod if var_prod else 'Producto'}_{datetime.now().strftime('%Y-%m-%d_%H%M%S')}.pdf"
     st.download_button(
-        label="📥 DESCARGAR ACTA PDF",
+        label="📥 DESCARGAR ACTA TÉCNICA PDF",
         data=pdf_bytes,
         file_name=nombre_archivo,
         mime="application/pdf",
         type="primary"
     )
-    
