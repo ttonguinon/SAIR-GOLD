@@ -10,18 +10,24 @@ from datetime import datetime
 from deep_translator import GoogleTranslator
 from fpdf import FPDF
 
-# --- 0. CONFIGURACIÓN DE DESCARGA ROBUSTA DESDE DRIVE ---
 @st.cache_resource
 def conectar_db():
     db_path = "sair_data.db"
     ID_DRIVE = "1txQ_c8GZnaBhcU5lgbs6TcY5rXq0FHqZ"
     
+    # Verificación de integridad: Si el archivo no existe o está corrupto (muy pequeño)
     if not os.path.exists(db_path) or os.path.getsize(db_path) < 1000000:
-        with st.spinner("Descargando Base de Datos (310MB)... Espere un momento."):
+        if os.path.exists(db_path):
+            os.remove(db_path) # Borramos rastro de descarga fallida
+            
+        with st.spinner("Iniciando transferencia de Base de Datos Forense (310MB)... Por favor, espere 3-5 minutos."):
             try:
-                gdown.download(id=ID_DRIVE, output=db_path, quiet=False, fuzzy=True)
+                # Usamos gdown con parámetros de alta compatibilidad
+                url = f'https://drive.google.com/uc?id={ID_DRIVE}'
+                gdown.download(url, db_path, quiet=False, fuzzy=True)
+                st.success("¡Descarga completada con éxito!")
             except Exception as e:
-                st.error(f"Error técnico de descarga: {e}")
+                st.error(f"Error de red: {e}. Por favor, use el botón de reintento en la barra lateral.")
             
     return sqlite3.connect(db_path, check_same_thread=False)
 
