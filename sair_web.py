@@ -4,39 +4,24 @@ import sqlite3
 import os
 import re
 import textwrap
-import requests
+import gdown
 import pandas as pd
 from datetime import datetime
 from deep_translator import GoogleTranslator
 from fpdf import FPDF
 
-# --- 0. CONFIGURACIÓN DE DESCARGA DESDE DRIVE ---
-def descargar_db_desde_drive(file_id, destination):
-    URL = "https://docs.google.com/uc?export=download"
-    session = requests.Session()
-    response = session.get(URL, params={'id': file_id}, stream=True)
-    token = None
-    for key, value in response.cookies.items():
-        if key.startswith('download_warning'):
-            token = value
-            break
-    if token:
-        params = {'id': file_id, 'confirm': token}
-        response = session.get(URL, params=params, stream=True)
-    
-    with open(destination, "wb") as f:
-        for chunk in response.iter_content(32768):
-            if chunk: f.write(chunk)
-
+# --- 0. CONFIGURACIÓN DE DESCARGA ROBUSTA DESDE DRIVE ---
 @st.cache_resource
 def conectar_db():
     db_path = "sair_data.db"
     ID_DRIVE = "1txQ_c8GZnaBhcU5lgbs6TcY5rXq0FHqZ"
     
-    if not os.path.exists(db_path):
-        with st.spinner("Descargando Base de Datos Forense (310MB)... Esto solo ocurre una vez."):
-            descargar_db_desde_drive(ID_DRIVE, db_path)
-    
+    # Si no existe o pesa menos de 1MB (error de descarga previa), forzar descarga
+    if not os.path.exists(db_path) or os.path.getsize(db_path) < 1000000:
+        with st.spinner("Descargando Base de Datos Forense (310MB) desde servidor seguro... Esto puede tardar unos minutos."):
+            url = f'https://drive.google.com/uc?id={ID_DRIVE}'
+            gdown.download(url, db_path, quiet=False)
+            
     return sqlite3.connect(db_path, check_same_thread=False)
 
 # --- 1. CONFIGURACIÓN NORMATIVA Y TRADUCCIÓN ---
@@ -170,6 +155,19 @@ def buscar_en_db(term, fuente):
 st.set_page_config(page_title="SAIR v17.5 GOLD - INVIMA", layout="wide")
 st.title("SAIR v17.5 GOLD DEFINITIVA")
 st.markdown("### Auditoría Forense Integral (INVIMA 2026)")
+
+# --- MONITOR DE BASE DE DATOS EN BARRA LATERAL ---
+with st.sidebar:
+    st.markdown("### Estado del Sistema")
+    if os.path.exists("sair_data.db"):
+        peso_mb = os.path.getsize("sair_data.db") / (1024 * 1024)
+        if peso_mb > 1:
+            st.success(f"✅ DB Conectada ({peso_mb:.1f} MB)")
+        else:
+            st.error("❌ Error de archivo DB. Reinicie.")
+    else:
+        st.warning("⏳ Esperando DB...")
+
 st.divider()
 
 if 'receta' not in st.session_state: st.session_state.receta = []
@@ -381,3 +379,4 @@ if st.session_state.reporte_texto:
         mime="application/pdf",
         type="primary"
     )
+    
