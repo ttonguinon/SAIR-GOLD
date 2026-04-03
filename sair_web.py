@@ -19,11 +19,13 @@ def conectar_db():
     # Si no existe o pesa menos de 1MB (error de descarga previa), forzar descarga
     if not os.path.exists(db_path) or os.path.getsize(db_path) < 1000000:
         with st.spinner("Descargando Base de Datos Forense (310MB) desde servidor seguro... Esto puede tardar unos minutos."):
-            url = f'https://drive.google.com/uc?id={ID_DRIVE}'
-            gdown.download(url, db_path, quiet=False)
+            try:
+                # El parámetro fuzzy=True ayuda a saltar los bloqueos de Google Drive
+                gdown.download(id=ID_DRIVE, output=db_path, quiet=False, fuzzy=True)
+            except Exception as e:
+                st.error(f"Error técnico de descarga: {e}")
             
     return sqlite3.connect(db_path, check_same_thread=False)
-
 # --- 1. CONFIGURACIÓN NORMATIVA Y TRADUCCIÓN ---
 traductor_en = GoogleTranslator(source='es', target='en')
 traductor_es = GoogleTranslator(source='en', target='es')
@@ -164,7 +166,11 @@ with st.sidebar:
         if peso_mb > 1:
             st.success(f"✅ DB Conectada ({peso_mb:.1f} MB)")
         else:
-            st.error("❌ Error de archivo DB. Reinicie.")
+            st.error("❌ Error de archivo DB. Descarga incompleta.")
+            if st.button("🔄 Forzar Re-descarga de DB"):
+                os.remove("sair_data.db")
+                st.cache_resource.clear()
+                st.rerun()
     else:
         st.warning("⏳ Esperando DB...")
 
