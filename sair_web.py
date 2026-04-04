@@ -4,34 +4,20 @@ import sqlite3
 import os
 import re
 import textwrap
-import gdown
 import pandas as pd
 from datetime import datetime
 from deep_translator import GoogleTranslator
 from fpdf import FPDF
 
+# --- 0. CONEXIÓN DIRECTA (ARCHIVO OPTIMIZADO 10.5 MB) ---
 @st.cache_resource
 def conectar_db():
     db_path = "sair_data.db"
-    ID_DRIVE = "1txQ_c8GZnaBhcU5lgbs6TcY5rXq0FHqZ"
-    
-    # Verificación de integridad: Si el archivo no existe o está corrupto (muy pequeño)
-    if not os.path.exists(db_path) or os.path.getsize(db_path) < 1000000:
-        if os.path.exists(db_path):
-            os.remove(db_path) # Borramos rastro de descarga fallida
-            
-        with st.spinner("Iniciando transferencia de Base de Datos Forense (310MB)... Por favor, espere 3-5 minutos."):
-            try:
-                # Usamos gdown con parámetros de alta compatibilidad
-                url = f'https://drive.google.com/uc?id={ID_DRIVE}'
-                gdown.download(url, db_path, quiet=False, fuzzy=True)
-                st.success("¡Descarga completada con éxito!")
-            except Exception as e:
-                st.error(f"Error de red: {e}. Por favor, use el botón de reintento en la barra lateral.")
-            
+    if not os.path.exists(db_path):
+        st.error("❌ Archivo de Base de Datos no encontrado en el repositorio.")
     return sqlite3.connect(db_path, check_same_thread=False)
 
-# --- 1. CONFIGURACIÓN NORMATIVA Y TRADUCCIÓN ---
+# --- 1. MOTOR NORMATIVO (REGLA DE ORO: SIN ALTERACIONES) ---
 traductor_en = GoogleTranslator(source='es', target='en')
 traductor_es = GoogleTranslator(source='en', target='es')
 
@@ -141,42 +127,31 @@ def buscar_en_db(term, fuente):
             te = traductor_en.translate(term).upper()
             pe = normalizar_texto(te).split()
             c = " AND ".join([f"{cn} LIKE ?" for _ in pe]); v = [f"%{x}%" for x in pe]
-            cur.execute(f"SELECT * FROM ingredientes WHERE {c} AND fuente LIKE 'USDA%' LIMIT 100", v)
+            cur.execute(f"SELECT * FROM ingredientes WHERE {c} AND fuente LIKE 'USDA%' LIMIT 50", v)
             r = [dict(row) for row in cur.fetchall()]
             if r:
-                for i in range(0, len(r), 50):
-                    l = r[i:i+50]
-                    tu = " ||| ".join([item['nombre'] for item in l])
-                    try:
-                        tr = traductor_es.translate(tu).upper()
-                        ne = tr.split(" ||| ")
-                        if len(ne) == len(l):
-                            for j, it in enumerate(l): it['nombre'] = ne[j].strip()
-                        else:
-                            for it in l: it['nombre'] = traductor_es.translate(it['nombre']).upper()
-                    except: pass
+                tu = " ||| ".join([item['nombre'] for item in r])
+                try:
+                    tr = traductor_es.translate(tu).upper()
+                    ne = tr.split(" ||| ")
+                    if len(ne) == len(r):
+                        for j, it in enumerate(r): it['nombre'] = ne[j].strip()
+                except: pass
             return r, "USDA"
     except: return [], "ERROR"
 
-# --- 2. INTERFAZ GRÁFICA Y GESTIÓN DE ESTADO ---
-st.set_page_config(page_title="SAIR v17.5 GOLD - INVIMA", layout="wide")
+# --- 2. INTERFAZ GRÁFICA ---
+st.set_page_config(page_title="SAIR - INVIMA 2026", layout="wide")
 st.title("SAIR v17.5 GOLD DEFINITIVA")
-st.markdown("### Auditoría Integral Al Rotulado Nutricional (INVIMA 2026)")
+st.markdown("### SISTEMA AUTOMATIZADO DE INSPECCIÓN DEL ROTULADO (NUTRICIONAL)")
 
 with st.sidebar:
     st.markdown("### Estado del Sistema")
     if os.path.exists("sair_data.db"):
         peso_mb = os.path.getsize("sair_data.db") / (1024 * 1024)
-        if peso_mb > 1:
-            st.success(f"✅ DB Conectada ({peso_mb:.1f} MB)")
-        else:
-            st.error("❌ Error de archivo DB. Descarga incompleta.")
-            if st.button("🔄 Forzar Re-descarga de DB"):
-                os.remove("sair_data.db")
-                st.cache_resource.clear()
-                st.rerun()
+        st.success(f"✅ DB Conectada ({peso_mb:.2f} MB)")
     else:
-        st.warning("⏳ Esperando DB...")
+        st.error("❌ Archivo DB no encontrado.")
 
 st.divider()
 
@@ -185,8 +160,8 @@ if 'resultados_actuales' not in st.session_state: st.session_state.resultados_ac
 if 'fuente_busqueda' not in st.session_state: st.session_state.fuente_busqueda = "ICBF"
 if 'reporte_texto' not in st.session_state: st.session_state.reporte_texto = ""
 
+# --- 1. DATOS DEL PRODUCTO ---
 col_p1, col_p2 = st.columns(2)
-
 with col_p1:
     st.header("1. DATOS DEL PRODUCTO")
     var_prod = st.text_input("Nombre Comercial:").upper()
@@ -197,78 +172,54 @@ with col_p1:
 with col_p2:
     st.header("2. INGREDIENTES")
     col_i1, col_i2 = st.columns([2, 1])
-    with col_i1: var_ing = st.text_input("Nombre del Ingrediente a buscar:").upper()
-    with col_i2: cant_ing = st.number_input("Cantidad (g) o (ml):", min_value=0.0, format="%.2f")
+    with col_i1: var_ing = st.text_input("Nombre del Ingrediente:").upper()
+    with col_i2: cant_ing = st.number_input("Cantidad (g/ml):", min_value=0.0, format="%.2f")
     
-    col_btn1, col_btn2 = st.columns(2)
-    with col_btn1:
+    cb1, cb2 = st.columns(2)
+    with cb1:
         if st.button("BUSCAR EN ICBF", type="primary", use_container_width=True):
             if var_ing:
-                res, fuente = buscar_en_db(var_ing, "ICBF")
-                if res:
-                    st.session_state.resultados_actuales = res
-                    st.session_state.fuente_busqueda = fuente
-                else:
-                    st.warning(f"No se encontró '{var_ing}' en ICBF. Intenta en USDA.")
-                    st.session_state.resultados_actuales = []
-    with col_btn2:
-        if st.button("BUSCAR EN USDA (Traducción)", use_container_width=True):
+                res, f = buscar_en_db(var_ing, "ICBF")
+                st.session_state.resultados_actuales = res; st.session_state.fuente_busqueda = f
+    with cb2:
+        if st.button("BUSCAR EN USDA", use_container_width=True):
             if var_ing:
                 with st.spinner("Traduciendo y buscando en USDA..."):
-                    res, fuente = buscar_en_db(var_ing, "USDA")
-                    if res:
-                        st.session_state.resultados_actuales = res
-                        st.session_state.fuente_busqueda = fuente
-                    else:
-                        st.error(f"Sin resultados en USDA para '{var_ing}'")
-                        st.session_state.resultados_actuales = []
+                    res, f = buscar_en_db(var_ing, "USDA")
+                    st.session_state.resultados_actuales = res; st.session_state.fuente_busqueda = f
 
     if st.session_state.resultados_actuales:
-        opciones = [f"{r['nombre']} ({r.get('fuente', st.session_state.fuente_busqueda)})" for r in st.session_state.resultados_actuales]
+        opciones = [f"{r['nombre']} ({st.session_state.fuente_busqueda})" for r in st.session_state.resultados_actuales]
         seleccion = st.selectbox("Seleccione el ingrediente exacto:", opciones)
-        
         if st.button("ADICIONAR A LA FORMULACIÓN", type="primary", use_container_width=True):
             idx = opciones.index(seleccion)
             item = st.session_state.resultados_actuales[idx]
-            st.session_state.receta.append({
-                "info": item, 
-                "peso": cant_ing, 
-                "nombre_es": item['nombre'].upper(), 
-                "origen": item.get('fuente', st.session_state.fuente_busqueda)
-            })
+            st.session_state.receta.append({"info": item, "peso": cant_ing, "nombre_es": item['nombre'].upper(), "origen": st.session_state.fuente_busqueda})
             st.success(f"Añadido: {item['nombre']}")
-            st.session_state.resultados_actuales = []
-            st.rerun()
+            st.session_state.resultados_actuales = []; st.rerun()
 
 st.divider()
 
-# --- 3. REPORTE TÉCNICO INVIMA (MOTOR ALGORÍTMICO COMPLETO) ---
+# --- 3. REPORTE TÉCNICO ---
 st.header("3. REPORTE TÉCNICO")
-
-col_r1, col_r2 = st.columns([2, 1])
-with col_r1:
-    if st.session_state.receta:
-        st.write("### Formulación Actual")
-        df_receta = pd.DataFrame(st.session_state.receta)[["nombre_es", "peso", "origen"]]
-        st.dataframe(df_receta, use_container_width=True)
-        st.write(f"**TOTAL MASA:** {sum(i['peso'] for i in st.session_state.receta):.2f} (g/ml)")
-
-with col_r2:
-    if st.button("LIMPIAR DATOS", type="secondary", use_container_width=True):
-        st.session_state.receta = []
-        st.session_state.reporte_texto = ""
-        st.rerun()
+if st.session_state.receta:
+    c_r1, c_r2 = st.columns([2, 1])
+    with c_r1:
+        st.dataframe(pd.DataFrame(st.session_state.receta)[["nombre_es", "peso", "origen"]], use_container_width=True)
+        st.write(f"**TOTAL MASA:** {sum(i['peso'] for i in st.session_state.receta):.2f}")
+    with c_r2:
+        if st.button("LIMPIAR DATOS", type="secondary", use_container_width=True):
+            st.session_state.receta = []; st.session_state.reporte_texto = ""; st.rerun()
 
 if st.button("GENERAR ANÁLISIS INTEGRAL", type="primary"):
     if not st.session_state.receta or var_peso <= 0:
-        st.error("Debe ingresar ingredientes y un contenido neto declarado mayor a 0.")
+        st.error("Datos insuficientes.")
     else:
-        peso_f = float(var_peso)
-        matriz = cmb_matriz
+        peso_f = float(var_peso); matriz = cmb_matriz
         mapa_forense = {'energia': ['energia', 'energy', 'energy_kcal'], 'proteina': ['proteina', 'protein'], 'grasa_total': ['grasa_total', 'fat', 'total_lipid'], 'grasa_sat': ['grasa_sat', 'fatty_acids_total_saturated'], 'grasa_trans': ['grasa_trans', 'fatty_acids_total_trans'], 'carbohidratos': ['carbohidratos', 'carbohydrate'], 'azucares_totales': ['azucares_totales', 'sugars', 'sugars_total'], 'azucares_anadidos': ['azucares_anadidos', 'added_sugars', 'sugars_added'], 'fibra': ['fibra', 'fiber'], 'sodio': ['sodio', 'sodium'], 'vit_a': ['vit_a', 'vitamin_a'], 'vit_d': ['vit_d', 'vitamin_d'], 'hierro': ['hierro', 'iron'], 'calcio': ['calcio', 'calcium'], 'zinc': ['zinc']}
         nombres_display = {'energia': 'Energía (kcal)', 'proteina': 'Proteína (g)', 'grasa_total': 'Grasa Total (g)', 'grasa_sat': 'Grasa Saturada (g)', 'grasa_trans': 'Grasa Trans (g)', 'carbohidratos': 'Carbohidratos Tot. (g)', 'azucares_totales': 'Azúcares Totales (g)', 'azucares_anadidos': 'Azúcares Añadidos (g)', 'fibra': 'Fibra Dietaria (g)', 'sodio': 'Sodio (mg)', 'vit_a': 'Vitamina A (ug)', 'vit_d': 'Vitamina D (ug)', 'hierro': 'Hierro (mg)', 'calcio': 'Calcio (mg)', 'zinc': 'Zinc (mg)'}
         
-        texto_reporte = f"AUDITORÍA INTEGRAL AL ROTULADO NUTRICIONAL - {var_prod}\n" + "="*85 + "\n"
+        texto_reporte = f"SISTEMA AUTOMATIZADO DE INSPECCIÓN DEL ROTULADO (NUTRICIONAL) - {var_prod}\n" + "="*85 + "\n"
         texto_reporte += "1. COMPOSICIÓN DE LA FORMULACIÓN (Trazabilidad):\n"
         texto_reporte += f"{'INGREDIENTE':<35} | {'ORIGEN':<8} | {'CANT.':<8} | {'%'}\n" + "-"*75 + "\n"
         
@@ -278,16 +229,14 @@ if st.button("GENERAR ANÁLISIS INTEGRAL", type="primary"):
         t_az = ["AZUCAR", "PANELA", "MIEL", "JARABE", "FRUCTOSA", "GLUCOSA", "SACAROSA", "MALTODEXTRINA", "ALMIBAR", "JUGO", "ZUMO", "CONCENTRADO", "EXTRACTO", "MELAZA", "AGAVE", "DEXTROSA", "MALTOSA", "NECTAR", "CHANCACA", "CARAMELO", "ALFENIQUE"]
 
         for i in st.session_state.receta:
-            pct = (i['peso'] / peso_f) * 100
-            ne = normalizar_texto(i['nombre_es'])
+            pct = (i['peso'] / peso_f) * 100; ne = normalizar_texto(i['nombre_es'])
             texto_reporte += f"{i['nombre_es'][:35]:<35} | {i['origen']:<8} | {i['peso']:>6.1f} | {pct:>5.2f}%\n"
             if any(x in ne for x in ts): s_adic = True
             if any(x in ne for x in tg): g_adic = True
             if any(x in ne for x in t_az): az_adic = True
             
         texto_reporte += "\n2. TABLA NUTRICIONAL (Por cada 100 (g) o (ml))\n"
-        nut_g = {}
-        nut_str = {}
+        nut_g = {}; nut_str = {}
         for k, var in mapa_forense.items():
             s_n = 0
             for i in st.session_state.receta:
@@ -298,41 +247,28 @@ if st.button("GENERAR ANÁLISIS INTEGRAL", type="primary"):
                 s_n += (val * i['peso'] / 100)
             vl = redondear_res810((s_n / peso_f) * 100, k)
             texto_reporte += f"  {nombres_display.get(k, k):<25}: {vl}\n"
-            nut_g[k] = float(vl)
-            nut_str[k] = vl
+            nut_g[k] = float(vl); nut_str[k] = vl
             
         texto_reporte += "\n3. SELLOS FRONTALES (Res. 2492/2022 y Res. 254/2023):\n"
         en_t = nut_g.get('energia', 0)
-        
         k_az = nut_g.get('azucares_totales', 0) * 4 if az_adic else 0
-        k_gs = nut_g.get('grasa_sat', 0) * 9
-        k_gt = nut_g.get('grasa_trans', 0) * 9
-        
-        p_az = (k_az / en_t * 100) if en_t > 0 else 0
-        p_gs = (k_gs / en_t * 100) if en_t > 0 else 0
-        p_gt = (k_gt / en_t * 100) if en_t > 0 else 0
+        k_gs = nut_g.get('grasa_sat', 0) * 9; k_gt = nut_g.get('grasa_trans', 0) * 9
+        p_az = (k_az / en_t * 100) if en_t > 0 else 0; p_gs = (k_gs / en_t * 100) if en_t > 0 else 0; p_gt = (k_gt / en_t * 100) if en_t > 0 else 0
         r_so = (nut_g.get('sodio', 0) / en_t) if en_t > 0 else 0
         es_sol = "SÓLIDO" in matriz.upper()
         ex_so = (es_sol and (r_so >= 1 or nut_g.get('sodio',0) >= 300)) or (not es_sol and ((en_t > 0 and r_so >= 1) or (en_t == 0 and nut_g.get('sodio',0) >= 40)))
-        
         ed = any(x in normalizar_texto(str(st.session_state.receta)) for x in ["SUCRALOSA", "STEVIA", "ASPARTAME", "ACESULFAME", "ERITRITOL", "ASPARTAMO"])
         hs = False
-        
-        def po(t1, t2): 
-            return f"      .-------.\n     / {t1:^7} \\\n    |  {t2:^7}  |\n    | MINSALUD |\n     \\       /\n      '-------'\n"
-        
+        def po(t1, t2): return f"      .-------.\n     / {t1:^7} \\\n    |  {t2:^7}  |\n    | MINSALUD |\n     \\       /\n      '-------'\n"
         if ex_so and s_adic: texto_reporte += po("EXCESO", "SODIO"); hs = True
         if p_az >= 10 and az_adic: texto_reporte += po("EXCESO", "AZÚCAR"); hs = True
         if p_gs >= 10 and g_adic: texto_reporte += po("EXCESO", "G.SAT"); hs = True
         if p_gt >= 1 and g_adic: texto_reporte += po("EXCESO", "G.TRAN"); hs = True
         if ed: texto_reporte += po("CONTIENE", "EDULCO"); hs = True
-        
         if not hs: texto_reporte += "  >>> PRODUCTO LIBRE DE SELLOS FRONTALES.\n"
-        
         m_s = re.findall(r'\((\d+)mg\)', cmb_res2056)
         if m_s:
-            lim = int(m_s[0])
-            rs = "CUMPLE" if nut_g['sodio'] <= lim else "NO CUMPLE"
+            lim = int(m_s[0]); rs = "CUMPLE" if nut_g['sodio'] <= lim else "NO CUMPLE"
             texto_reporte += f"\n  META SODIO RES. 2056/2023 ({lim}mg): {rs}\n"
             
         texto_reporte += "\n" + "-"*40 + "\n4. ALERTAS DE SEGURIDAD (Res. 5109/2005 y 810/2021):\n"
@@ -347,8 +283,7 @@ if st.button("GENERAR ANÁLISIS INTEGRAL", type="primary"):
         for msg in sorted(al_t): texto_reporte += f"{msg}\n"
         
         texto_reporte += "\n" + "="*85 + "\n5. COMPOSICIÓN CENTESIMAL CRUZADA (% APORTE)\n\n"
-        h = f"{'INGREDIENTE':<16}|ENE |PRO |GRA |G.S |G.T |CHO |AZU |A.A |FIB |SOD |V.A |V.D |HIE |CAL |ZIN "
-        texto_reporte += h + "\n" + "-"*95 + "\n"
+        h = f"{'INGREDIENTE':<16}|ENE |PRO |GRA |G.S |G.T |CHO |AZU |A.A |FIB |SOD |V.A |V.D |HIE |CAL |ZIN "; texto_reporte += h + "\n" + "-"*95 + "\n"
         for i in st.session_state.receta:
             f = i['nombre_es'][:15].ljust(16)
             for k, v_map in mapa_forense.items():
@@ -358,33 +293,14 @@ if st.button("GENERAR ANÁLISIS INTEGRAL", type="primary"):
                         val = next((float(i['info'][vt]) for vt in mapa_forense['azucares_totales'] if vt in i['info'] and i['info'][vt] is not None and str(i['info'][vt]).strip() != ''), 0)
                 f += f"|{( (val * i['peso'] / 100) / peso_f * 100):4.1f}"
             texto_reporte += f + "\n"
-            
-        ing_o = sorted(st.session_state.receta, key=lambda x: x['peso'], reverse=True)
-        l_i = f"INGREDIENTES: {'; '.join([ing['nombre_es'] for ing in ing_o])}."
-        texto_reporte += f"\n{textwrap.fill(l_i, width=75)}\n"
-        
-        texto_reporte += "\n" + "="*85 + "\n TABLA NUTRICIONAL SUGERIDA EN FORMATO LINEAL:\n\n"
-        lin_str = "Información Nutricional por 100(g/ml): " + ", ".join([f"{nombres_display.get(k,k)}: {nut_str.get(k,'0')}" for k in mapa_forense.keys()]) + "."
-        texto_reporte += f"{textwrap.fill(lin_str, width=75)}\n\n"
-        
-        texto_reporte += "FIN DE AUDITORÍA TÉCNICA"
+        ing_o = sorted(st.session_state.receta, key=lambda x: x['peso'], reverse=True); l_i = f"INGREDIENTES: {'; '.join([ing['nombre_es'] for ing in ing_o])}."; texto_reporte += f"\n{textwrap.fill(l_i, width=75)}\n"
+        texto_reporte += "\n" + "="*85 + "\n TABLA NUTRICIONAL SUGERIDA EN FORMATO LINEAL:\n\n"; lin_str = "Información Nutricional por 100(g/ml): " + ", ".join([f"{nombres_display.get(k,k)}: {nut_str.get(k,'0')}" for k in mapa_forense.keys()]) + "."; texto_reporte += f"{textwrap.fill(lin_str, width=75)}\n\nFIN DE AUDITORÍA TÉCNICA"
         st.session_state.reporte_texto = texto_reporte
 
+# --- MOSTRAR REPORTE Y DESCARGA PDF ---
 if st.session_state.reporte_texto:
     st.markdown(f"```text\n{st.session_state.reporte_texto}\n```")
+    pdf = FPDF(); pdf.add_page(); pdf.set_font("Courier", size=8)
+    for l in st.session_state.reporte_texto.split('\n'): pdf.cell(200, 3.5, txt=l.encode('latin-1', 'replace').decode('latin-1'), ln=True)
+    st.download_button(label="📥 DESCARGAR ACTA PDF", data=pdf.output(dest='S').encode('latin-1'), file_name=f"Acta_SAIR_{var_prod}.pdf", mime="application/pdf", type="primary")
     
-    pdf = FPDF()
-    pdf.add_page()
-    pdf.set_font("Courier", size=8)
-    for l in st.session_state.reporte_texto.split('\n'):
-        pdf.cell(200, 3.5, txt=l.encode('latin-1', 'replace').decode('latin-1'), ln=True)
-    pdf_bytes = pdf.output(dest='S').encode('latin-1')
-    
-    nombre_archivo = f"Acta_Auditoria_{var_prod if var_prod else 'Producto'}_{datetime.now().strftime('%Y-%m-%d_%H%M%S')}.pdf"
-    st.download_button(
-        label="📥 DESCARGAR ACTA TÉCNICA PDF",
-        data=pdf_bytes,
-        file_name=nombre_archivo,
-        mime="application/pdf",
-        type="primary"
-    )
