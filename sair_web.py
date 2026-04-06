@@ -142,7 +142,7 @@ def buscar_en_db(term, fuente):
 
 # --- 2. INTERFAZ GRÁFICA ---
 st.set_page_config(page_title="SAIR - INVIMA 2026", layout="wide")
-st.title("SAIR v17.5 GOLD DEFINITIVA")
+st.title("SAIR v17.5 GOLD DEFINITIVA - WEB")
 st.markdown("### SISTEMA AUTOMATIZADO DE INSPECCIÓN DEL ROTULADO (NUTRICIONAL)")
 
 with st.sidebar:
@@ -167,6 +167,8 @@ with col_p1:
     var_prod = st.text_input("Nombre Comercial:").upper()
     cmb_matriz = st.selectbox("Matriz (Sólido/Líquido):", ["SÓLIDO (g)", "LÍQUIDO (ml)"])
     var_peso = st.number_input("Contenido Neto Declarado:", min_value=0.0, format="%.2f")
+    # --- NUEVO: CAMPO DE PORCIÓN EN STREAMLIT ---
+    var_porcion = st.number_input("Tamaño de la Porción (g) o (ml):", min_value=0.0, value=100.0, format="%.2f")
     cmb_res2056 = st.selectbox("Categoría (Res. 2056/2023):", CAT_RES_AUDITORIA)
 
 with col_p2:
@@ -213,9 +215,14 @@ if st.session_state.receta:
 
 if st.button("GENERAR ANÁLISIS INTEGRAL", type="primary"):
     if not st.session_state.receta or var_peso <= 0:
-        st.error("Datos insuficientes.")
+        st.error("Datos insuficientes. Verifique el contenido neto y los ingredientes.")
     else:
-        peso_f = float(var_peso); matriz = cmb_matriz
+        peso_f = float(var_peso)
+        tam_porc = float(var_porcion)
+        if tam_porc <= 0: tam_porc = 100.0
+        matriz = cmb_matriz
+        u_prod = "ml" if "LÍQUIDO" in matriz.upper() else "g"
+
         mapa_forense = {'energia': ['energia', 'energy', 'energy_kcal'], 'proteina': ['proteina', 'protein'], 'grasa_total': ['grasa_total', 'fat', 'total_lipid'], 'grasa_sat': ['grasa_sat', 'fatty_acids_total_saturated'], 'grasa_trans': ['grasa_trans', 'fatty_acids_total_trans'], 'carbohidratos': ['carbohidratos', 'carbohydrate'], 'azucares_totales': ['azucares_totales', 'sugars', 'sugars_total'], 'azucares_anadidos': ['azucares_anadidos', 'added_sugars', 'sugars_added'], 'fibra': ['fibra', 'fiber'], 'sodio': ['sodio', 'sodium'], 'vit_a': ['vit_a', 'vitamin_a'], 'vit_d': ['vit_d', 'vitamin_d'], 'hierro': ['hierro', 'iron'], 'calcio': ['calcio', 'calcium'], 'zinc': ['zinc']}
         nombres_display = {'energia': 'Energía (kcal)', 'proteina': 'Proteína (g)', 'grasa_total': 'Grasa Total (g)', 'grasa_sat': 'Grasa Saturada (g)', 'grasa_trans': 'Grasa Trans (g)', 'carbohidratos': 'Carbohidratos Tot. (g)', 'azucares_totales': 'Azúcares Totales (g)', 'azucares_anadidos': 'Azúcares Añadidos (g)', 'fibra': 'Fibra Dietaria (g)', 'sodio': 'Sodio (mg)', 'vit_a': 'Vitamina A (ug)', 'vit_d': 'Vitamina D (ug)', 'hierro': 'Hierro (mg)', 'calcio': 'Calcio (mg)', 'zinc': 'Zinc (mg)'}
         
@@ -235,7 +242,10 @@ if st.button("GENERAR ANÁLISIS INTEGRAL", type="primary"):
             if any(x in ne for x in tg): g_adic = True
             if any(x in ne for x in t_az): az_adic = True
             
-        texto_reporte += "\n2. TABLA NUTRICIONAL (Por cada 100 (g) o (ml))\n"
+        # --- NUEVO: TABLA NUTRICIONAL A DOS COLUMNAS ---
+        texto_reporte += f"\n2. TABLA NUTRICIONAL\n"
+        texto_reporte += f"{'NUTRIENTE':<25} | {'POR 100 ' + u_prod:<12} | {'PORCIÓN ' + str(tam_porc) + u_prod:<12}\n" + "-"*60 + "\n"
+        
         nut_g = {}; nut_str = {}
         for k, var in mapa_forense.items():
             s_n = 0
@@ -245,10 +255,14 @@ if st.button("GENERAR ANÁLISIS INTEGRAL", type="primary"):
                     if any(x in normalizar_texto(i['nombre_es']) for x in t_az):
                         val = next((float(i['info'][vt]) for vt in mapa_forense['azucares_totales'] if vt in i['info'] and i['info'][vt] is not None and str(i['info'][vt]).strip() != ''), 0)
                 s_n += (val * i['peso'] / 100)
-            vl = redondear_res810((s_n / peso_f) * 100, k)
-            texto_reporte += f"  {nombres_display.get(k, k):<25}: {vl}\n"
-            nut_g[k] = float(vl); nut_str[k] = vl
             
+            vl_100 = redondear_res810((s_n / peso_f) * 100, k)
+            vl_porc = redondear_res810((s_n / peso_f) * tam_porc, k)
+            
+            texto_reporte += f"  {nombres_display.get(k, k):<23} | {vl_100:<12} | {vl_porc:<12}\n"
+            nut_g[k] = float(vl_100); nut_str[k] = vl_100
+        # -----------------------------------------------
+
         texto_reporte += "\n3. SELLOS FRONTALES (Res. 2492/2022 y Res. 254/2023):\n"
         en_t = nut_g.get('energia', 0)
         k_az = nut_g.get('azucares_totales', 0) * 4 if az_adic else 0
@@ -294,7 +308,80 @@ if st.button("GENERAR ANÁLISIS INTEGRAL", type="primary"):
                 f += f"|{( (val * i['peso'] / 100) / peso_f * 100):4.1f}"
             texto_reporte += f + "\n"
         ing_o = sorted(st.session_state.receta, key=lambda x: x['peso'], reverse=True); l_i = f"INGREDIENTES: {'; '.join([ing['nombre_es'] for ing in ing_o])}."; texto_reporte += f"\n{textwrap.fill(l_i, width=75)}\n"
-        texto_reporte += "\n" + "="*85 + "\n TABLA NUTRICIONAL SUGERIDA EN FORMATO LINEAL:\n\n"; lin_str = "Información Nutricional por 100(g/ml): " + ", ".join([f"{nombres_display.get(k,k)}: {nut_str.get(k,'0')}" for k in mapa_forense.keys()]) + "."; texto_reporte += f"{textwrap.fill(lin_str, width=75)}\n\nFIN DE AUDITORÍA TÉCNICA"
+        texto_reporte += "\n" + "="*85 + "\n TABLA NUTRICIONAL SUGERIDA EN FORMATO LINEAL:\n\n"; lin_str = "Información Nutricional por 100(g/ml): " + ", ".join([f"{nombres_display.get(k,k)}: {nut_str.get(k,'0')}" for k in mapa_forense.keys()]) + "."; texto_reporte += f"{textwrap.fill(lin_str, width=75)}\n\n"
+
+        # --- NUEVO: ANEXO FORENSE Y SELLOS ---
+        texto_reporte += "="*85 + "\n6. ANEXO FORENSE: MEMORIA DE CÁLCULO\n"
+        texto_reporte += "A. TRAZABILIDAD POR NUTRIENTE (x100)\n"
+        
+        nutrientes_clave = ['energia', 'proteina', 'grasa_total', 'carbohidratos', 'azucares_totales', 'azucares_anadidos', 'sodio']
+        
+        for k in nutrientes_clave:
+            texto_reporte += f"--- {nombres_display.get(k, k).upper()} ---\n"
+            s_n_detalle = 0
+            for i in st.session_state.receta:
+                v_map = mapa_forense[k]
+                val = next((float(i['info'][v]) for v in v_map if v in i['info'] and i['info'][v] is not None and str(i['info'][v]).strip() != ''), 0)
+                
+                if k == 'azucares_anadidos' and val == 0:
+                    if any(x in normalizar_texto(i['nombre_es']) for x in t_az):
+                        val = next((float(i['info'][vt]) for vt in mapa_forense['azucares_totales'] if vt in i['info'] and i['info'][vt] is not None and str(i['info'][vt]).strip() != ''), 0)
+                
+                aporte = (val * i['peso'] / 100)
+                s_n_detalle += aporte
+                if val > 0:
+                    texto_reporte += f"  * {i['nombre_es'][:25]:<25}: {val:>6.2f} x ({i['peso']:>6.1f}/100) = {aporte:>6.2f}\n"
+            
+            proy_100 = (s_n_detalle / peso_f) * 100
+            val_redondeado = redondear_res810(proy_100, k)
+            texto_reporte += f"  > SUMA TOTAL EN MEZCLA : {s_n_detalle:.2f}\n"
+            texto_reporte += f"  > PROYECCIÓN (x100/{peso_f:<6.1f}) : {proy_100:.2f}\n"
+            texto_reporte += f"  > NORMA REDONDEADA     : {val_redondeado}\n\n"
+
+        texto_reporte += "B. DEMOSTRACIÓN MATEMÁTICA DE SELLOS Y METAS (Res. 2492/2022 y 2056/2023)\n"
+        texto_reporte += f"Energía Base Reportada: {en_t:.2f} kcal/100{u_prod}\n"
+        texto_reporte += f"Matriz declarada: {matriz.upper()}\n\n"
+
+        if az_adic:
+            texto_reporte += f"  [ AZÚCARES AÑADIDOS ]\n"
+            texto_reporte += f"  Fórmula: (Azúcares Totales g * 4 kcal) / Energía kcal * 100\n"
+            texto_reporte += f"  Cálculo: ({nut_g.get('azucares_totales',0)} * 4) / {en_t if en_t > 0 else 1} * 100 = {p_az:.2f}%\n"
+            texto_reporte += f"  Veredicto: Límite >= 10%. {'EXCEDE (LLEVA SELLO)' if p_az >= 10 else 'CUMPLE'}\n\n"
+        
+        if g_adic:
+            texto_reporte += f"  [ GRASAS SATURADAS Y TRANS ]\n"
+            texto_reporte += f"  Fórmula Sat: (Grasa Sat g * 9 kcal) / Energía kcal * 100\n"
+            texto_reporte += f"  Cálculo Sat: ({nut_g.get('grasa_sat',0)} * 9) / {en_t if en_t > 0 else 1} * 100 = {p_gs:.2f}%\n"
+            texto_reporte += f"  Veredicto Sat: Límite >= 10%. {'EXCEDE (LLEVA SELLO)' if p_gs >= 10 else 'CUMPLE'}\n"
+            texto_reporte += f"  Fórmula Trans: (Grasa Trans g * 9 kcal) / Energía kcal * 100\n"
+            texto_reporte += f"  Cálculo Trans: ({nut_g.get('grasa_trans',0)} * 9) / {en_t if en_t > 0 else 1} * 100 = {p_gt:.2f}%\n"
+            texto_reporte += f"  Veredicto Trans: Límite >= 1%. {'EXCEDE (LLEVA SELLO)' if p_gt >= 1 else 'CUMPLE'}\n\n"
+
+        if s_adic:
+            texto_reporte += f"  [ EXCESO DE SODIO ]\n"
+            texto_reporte += f"  Fórmula Ratio: Sodio mg / Energía kcal\n"
+            texto_reporte += f"  Cálculo: {nut_g.get('sodio',0)} / {en_t if en_t > 0 else 1} = {r_so:.2f}\n"
+            texto_reporte += f"  Límites Sólidos: Ratio >= 1 o Valor Absoluto >= 300 mg\n"
+            texto_reporte += f"  Límites Líquidos: Ratio >= 1 o Valor Absoluto >= 40 mg\n"
+            texto_reporte += f"  Veredicto: {'EXCEDE (LLEVA SELLO)' if ex_so else 'CUMPLE'}\n\n"
+
+        if m_s:
+            lim = int(m_s[0])
+            sodio_val = nut_g.get('sodio', 0)
+            texto_reporte += f"  [ META DE REDUCCIÓN DE SODIO (Res. 2056/2023) ]\n"
+            texto_reporte += f"  Categoría Evaluada: {cmb_res2056}\n"
+            texto_reporte += f"  Límite Normativo: {lim} mg / 100{u_prod}\n"
+            texto_reporte += f"  Sodio Calculado: {sodio_val} mg / 100{u_prod}\n"
+            if sodio_val > lim:
+                exceso = sodio_val - lim
+                texto_reporte += f"  Cálculo de Desviación: {sodio_val} - {lim} = {exceso:.2f} mg\n"
+                texto_reporte += f"  Veredicto: NO CUMPLE (Excede el límite en {exceso:.2f} mg)\n\n"
+            else:
+                texto_reporte += f"  Veredicto: CUMPLE\n\n"
+
+        texto_reporte += "FIN DE AUDITORÍA TÉCNICA"
+        # ------------------------------------------------
+
         st.session_state.reporte_texto = texto_reporte
 
 # --- MOSTRAR REPORTE Y DESCARGA PDF ---
