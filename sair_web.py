@@ -142,7 +142,7 @@ def buscar_en_db(term, fuente):
 
 # --- 2. INTERFAZ GRÁFICA ---
 st.set_page_config(page_title="SAIR - INVIMA 2026", layout="wide")
-st.title("SAIR v17.5 GOLD DEFINITIVA - WEB")
+st.title("SAIR v18.5 GOLD - WEB")
 st.markdown("### SISTEMA AUTOMATIZADO DE INSPECCIÓN DEL ROTULADO (NUTRICIONAL)")
 
 with st.sidebar:
